@@ -7,9 +7,23 @@ import cv2
 import numpy as np
 import dlib
 import threading
+import requests
 
 app = Flask(__name__)
 video_feed_running = True
+
+TELEGRAM_BOT_TOKEN = "8372835181:AAEACpPDhysRayNHs0wGjIn_0Wis5q9vMo0"
+TELEGRAM_CHAT_ID = "6026201990"
+
+def send_telegram_alert():
+    message = "🚨 Driver Drowsiness Alert!\n\nDriver appears drowsy."
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+    try:
+        r = requests.post(url, data=data, proxies={})
+        print(f"[Telegram] Response: {r.text}")
+    except Exception as e:
+        print(f"[Telegram] Failed: {e}")
 
 mixer.init()
 mixer.music.load("beep1.mp3")
@@ -18,8 +32,7 @@ def eye_aspect_ratio(eye):
     A = distance.euclidean(eye[1], eye[5])
     B = distance.euclidean(eye[2], eye[4])
     C = distance.euclidean(eye[0], eye[3])
-    ear = (A + B) / (2.0 * C)
-    return ear
+    return (A + B) / (2.0 * C)
 
 thresh = 0.25
 frame_check = 25
@@ -35,7 +48,7 @@ def driver_drowsiness():
     global cap, frame_count, video_feed_running
     while video_feed_running:
         ret, frame = cap.read()
-        frame = cv2.flip(frame, 1)  # Optional: flip the frame horizontally
+        frame = cv2.flip(frame, 1)
         if not ret:
             break
 
@@ -58,19 +71,14 @@ def driver_drowsiness():
 
             if ear < thresh:
                 frame_count += 1
-                print(frame_count)
                 if frame_count >= frame_check:
-                    cv2.putText(frame, f"Frame Count: {frame_count}", (10, 60),
-                                cv2.FONT_HERSHEY_PLAIN, 2.0, (0, 0, 255), 2)
-                    cv2.putText(frame, "wake up", (10, 30),
-                                cv2.FONT_HERSHEY_PLAIN, 2.0, (0, 0, 255), 2)
-                    cv2.putText(frame, "wake up", (10, 325),
+                    cv2.putText(frame, "WAKE UP!", (10, 30),
                                 cv2.FONT_HERSHEY_PLAIN, 2.0, (0, 0, 255), 2)
                     mixer.music.play()
+                    if frame_count == frame_check:
+                        send_telegram_alert()
             else:
                 frame_count = 0
-                cv2.putText(frame, f"Frame Count: {frame_count}", (10, 60),
-                            cv2.FONT_HERSHEY_PLAIN, 2.0, (0, 0, 255), 2)
                 cv2.putText(frame, "Nice Driving", (10, 30),
                             cv2.FONT_HERSHEY_PLAIN, 2.0, (0, 255, 0), 2)
 
@@ -90,7 +98,4 @@ def video_feed():
     return Response(driver_drowsiness(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 if __name__ == '__main__':
-    t = threading.Thread(target=driver_drowsiness)
-    t.daemon = True
-    t.start()
     app.run(debug=True)
